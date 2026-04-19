@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wasla Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1d23;color:#e2e8f0}
+
+        .shell{display:flex;height:100vh;max-height:100vh;overflow:hidden}
+
+        .sidebar{width:260px;min-width:260px;background:#111318;display:flex;flex-direction:column;border-right:1px solid #2d3139}
+        .sidebar-header{padding:16px;border-bottom:1px solid #2d3139;display:flex;align-items:center;gap:10px}
+        .sidebar-header .logo{width:32px;height:32px;border-radius:8px;background:#3b82f6;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+        .sidebar-header .workspace{font-weight:600;font-size:15px;color:#f1f5f9}
+        .sidebar-header .ws-sub{font-size:11px;color:#64748b;margin-top:1px}
+
+        .channel-section{padding:8px 0;flex:1;overflow-y:auto}
+        .channel-section::-webkit-scrollbar{width:4px}
+        .channel-section::-webkit-scrollbar-thumb{background:#2d3139;border-radius:2px}
+        .section-label{padding:6px 16px;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;display:flex;align-items:center;justify-content:space-between}
+        .channel-item{padding:6px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;border-radius:0;font-size:14px;color:#94a3b8;transition:background 0.1s;user-select:none}
+        .channel-item:hover{background:#1e2129;color:#e2e8f0}
+        .channel-item.active{background:#1d3461;color:#93c5fd}
+        .channel-item .ch-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+        .channel-item .ch-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .channel-item .unread{background:#3b82f6;color:#fff;font-size:10px;font-weight:700;border-radius:8px;padding:1px 6px;min-width:18px;text-align:center}
+
+        .sidebar-footer{padding:12px 16px;border-top:1px solid #2d3139;display:flex;align-items:center;gap:10px}
+        .user-avatar{width:32px;height:32px;border-radius:50%;background:#3b82f6;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:#fff;flex-shrink:0;cursor:pointer}
+        .user-info{flex:1;min-width:0}
+        .user-info .uname{font-size:13px;font-weight:500;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .user-info .ustatus{font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px}
+        .status-dot{width:7px;height:7px;border-radius:50%;background:#475569;flex-shrink:0}
+        .status-dot.online{background:#22c55e}
+        .status-dot.connecting{background:#f59e0b;animation:blink 1s infinite}
+        @keyframes blink{50%{opacity:0.3}}
+
+        .main{flex:1;display:flex;flex-direction:column;min-width:0;background:#1a1d23}
+
+        .chat-header{padding:0 20px;height:56px;border-bottom:1px solid #2d3139;display:flex;align-items:center;gap:12px;flex-shrink:0}
+        .chat-header .ch-title{font-size:15px;font-weight:600;color:#f1f5f9;display:flex;align-items:center;gap:6px}
+        .chat-header .ch-sub{font-size:12px;color:#64748b;margin-left:auto;display:flex;align-items:center;gap:12px}
+        .hdr-btn{background:transparent;border:none;color:#64748b;cursor:pointer;padding:6px;border-radius:6px;font-size:16px;display:flex;align-items:center;transition:color 0.15s,background 0.15s}
+        .hdr-btn:hover{color:#e2e8f0;background:#2d3139}
+        .member-count{font-size:12px;color:#64748b;display:flex;align-items:center;gap:4px}
+
+        .messages{flex:1;overflow-y:auto;padding:20px 20px 8px;display:flex;flex-direction:column;gap:2px}
+        .messages::-webkit-scrollbar{width:6px}
+        .messages::-webkit-scrollbar-track{background:transparent}
+        .messages::-webkit-scrollbar-thumb{background:#2d3139;border-radius:3px}
+
+        .day-divider{display:flex;align-items:center;gap:12px;margin:16px 0 8px;flex-shrink:0}
+        .day-divider span{font-size:11px;color:#64748b;white-space:nowrap;font-weight:500}
+        .day-divider::before,.day-divider::after{content:'';flex:1;height:1px;background:#2d3139}
+
+        .msg-group{display:flex;gap:12px;padding:2px 0;align-items:flex-start;border-radius:8px;padding:6px 8px}
+        .msg-group:hover{background:#1e2129}
+        .msg-group.own{flex-direction:row-reverse}
+
+        .avatar-col{flex-shrink:0;margin-top:2px}
+        .avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#fff;flex-shrink:0}
+
+        .bubble-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+        .msg-group.own .bubble-col{align-items:flex-end}
+
+        .msg-meta{display:flex;align-items:baseline;gap:8px}
+        .msg-group.own .msg-meta{flex-direction:row-reverse}
+        .sender-name{font-size:13px;font-weight:600;color:#e2e8f0}
+        .msg-time{font-size:11px;color:#475569}
+
+        .bubble{max-width:520px;padding:8px 12px;border-radius:12px;font-size:14px;line-height:1.5;color:#e2e8f0;word-break:break-word}
+        .bubble.public{background:#252a35;border-radius:4px 12px 12px 12px}
+        .bubble.own-bubble{background:#1d4ed8;border-radius:12px 4px 12px 12px;color:#eff6ff}
+        .bubble.private{background:#2d1f3d;border-radius:4px 12px 12px 12px;border-left:2px solid #7c3aed}
+        .bubble.own-private{background:#4c1d95;border-radius:12px 4px 12px 12px;color:#ede9fe;border-right:2px solid #a78bfa}
+        .dm-label{font-size:10px;color:#a78bfa;font-weight:600;letter-spacing:0.4px;margin-bottom:2px}
+
+        .system-msg{text-align:center;font-size:12px;color:#475569;padding:4px 0;display:flex;align-items:center;justify-content:center;gap:8px;flex-shrink:0}
+        .system-msg::before,.system-msg::after{content:'';flex:1;max-width:60px;height:1px;background:#2d3139}
+
+        .join-leave{text-align:center;padding:3px 0;font-size:12px;color:#475569;flex-shrink:0}
+        .join-leave .name{color:#22c55e;font-weight:500}
+        .join-leave.leave .name{color:#f87171}
+
+        .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#475569}
+        .empty-icon{width:52px;height:52px;border-radius:16px;background:#252a35;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:4px}
+        .empty-state p{font-size:14px}
+        .empty-state small{font-size:12px;color:#374151}
+
+        .typing-bar{height:20px;padding:0 28px;display:flex;align-items:center;gap:6px;flex-shrink:0}
+        .typing-dots{display:flex;gap:3px}
+        .typing-dots span{width:5px;height:5px;border-radius:50%;background:#64748b;animation:tdot 1.2s infinite}
+        .typing-dots span:nth-child(2){animation-delay:0.2s}
+        .typing-dots span:nth-child(3){animation-delay:0.4s}
+        @keyframes tdot{0%,60%,100%{opacity:0.3;transform:scale(1)}30%{opacity:1;transform:scale(1.3)}}
+        .typing-text{font-size:12px;color:#64748b}
+
+        .input-area{padding:12px 20px 16px;flex-shrink:0}
+        .input-box{background:#252a35;border:1px solid #2d3139;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;transition:border-color 0.2s}
+        .input-box:focus-within{border-color:#3b82f6}
+        .input-top{display:flex;align-items:center;gap:0;padding:4px 4px 4px 12px}
+        .dm-target{display:none;align-items:center;gap:6px;padding:4px 8px;background:#1e1b2e;border-radius:6px;margin:6px 12px 0;font-size:12px;color:#a78bfa;cursor:pointer}
+        .dm-target .dt-icon{color:#7c3aed;font-size:13px}
+        .dm-target .close-dm{margin-left:auto;color:#7c3aed;cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
+        .dm-target.visible{display:flex}
+        .msg-input{flex:1;background:transparent;border:none;outline:none;color:#e2e8f0;font-size:14px;line-height:1.5;font-family:inherit;padding:8px 4px;resize:none;min-height:40px;max-height:120px}
+        .msg-input::placeholder{color:#475569}
+        .msg-input:disabled{cursor:not-allowed;opacity:0.4}
+        .input-actions{display:flex;align-items:center;gap:4px;padding:0 4px 4px;justify-content:space-between}
+        .action-btns{display:flex;gap:4px}
+        .iact{background:transparent;border:none;color:#475569;cursor:pointer;width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;transition:color 0.15s,background 0.15s}
+        .iact:hover:not(:disabled){color:#94a3b8;background:#2d3139}
+        .iact:disabled{opacity:0.3;cursor:not-allowed;pointer-events:none}
+        .send-btn{background:#3b82f6;border:none;color:#fff;cursor:pointer;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;flex-shrink:0}
+        .send-btn:hover:not(:disabled){background:#2563eb}
+        .send-btn:disabled{background:#1e3a5f;cursor:not-allowed;opacity:0.5}
+        .send-icon{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+        .connect-overlay{position:absolute;inset:0;background:rgba(10,11,15,0.92);display:flex;align-items:center;justify-content:center;z-index:100}
+        .connect-card{background:#1e2129;border:1px solid #2d3139;border-radius:16px;padding:32px;width:340px}
+        .connect-card h3{font-size:18px;font-weight:600;color:#f1f5f9;margin-bottom:4px}
+        .connect-card p{font-size:13px;color:#64748b;margin-bottom:24px}
+        .field{margin-bottom:14px}
+        .field label{display:block;font-size:12px;font-weight:500;color:#94a3b8;margin-bottom:5px}
+        .field input{width:100%;background:#111318;border:1px solid #2d3139;color:#e2e8f0;padding:10px 12px;border-radius:8px;font-size:14px;font-family:inherit;outline:none;transition:border-color 0.2s}
+        .field input:focus{border-color:#3b82f6}
+        .connect-btn{width:100%;background:#3b82f6;color:#fff;border:none;padding:11px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;transition:background 0.15s}
+        .connect-btn:hover{background:#2563eb}
+        .connect-btn:disabled{background:#1e3a5f;opacity:0.5;cursor:not-allowed}
+        .err-msg{font-size:12px;color:#f87171;margin-top:8px;min-height:16px}
+
+        .av-blue{background:#1d4ed8}.av-purple{background:#6d28d9}.av-teal{background:#0f766e}
+        .av-orange{background:#c2410c}.av-pink{background:#be185d}.av-green{background:#15803d}
+        .av-red{background:#b91c1c}.av-amber{background:#b45309}
+    </style>
+</head>
+<body>
+
+<div class="shell" id="shell" style="position:relative">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">W</div>
+            <div>
+                <div class="workspace">Wasla</div>
+                <div class="ws-sub">Engineering team</div>
+            </div>
+        </div>
+
+        <div class="channel-section">
+            <div class="section-label">Channels</div>
+            <div class="channel-item active" id="chPublic" onclick="switchChannel('public')">
+                <span class="ch-icon">#</span>
+                <span class="ch-name">general</span>
+            </div>
+            <div class="channel-item" id="chPrivate" onclick="switchChannel('private')">
+                <span class="ch-icon" style="font-size:12px">&#9679;</span>
+                <span class="ch-name">direct messages</span>
+                <span class="unread" id="dmBadge" style="display:none">0</span>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="user-avatar" id="myAvatar">?</div>
+            <div class="user-info">
+                <div class="uname" id="myName">Not connected</div>
+                <div class="ustatus">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">offline</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main chat -->
+    <div class="main">
+        <div class="chat-header">
+            <div class="ch-title" id="chanTitle">
+                <span id="chanIcon" style="color:#64748b">#</span>
+                <span id="chanName">general</span>
+            </div>
+            <div class="ch-sub">
+                <span class="member-count" id="memberCount" style="display:none">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+                    <span id="memberNum">0</span> online
+                </span>
+                <button class="hdr-btn" id="settingsBtn" onclick="showConnect()" title="Settings">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="messages" id="messages">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">&#128172;</div>
+                <p>No messages yet</p>
+                <small>Connect to start chatting</small>
+            </div>
+        </div>
+
+        <div class="typing-bar" id="typingBar" style="visibility:hidden">
+            <div class="typing-dots"><span></span><span></span><span></span></div>
+            <span class="typing-text" id="typingText"></span>
+        </div>
+
+        <div class="input-area">
+            <div class="input-box">
+                <div class="dm-target" id="dmTarget">
+                    <span class="dt-icon">&#9679;</span>
+                    <span>DM to <strong id="dmToName"></strong></span>
+                    <span class="close-dm" onclick="clearDmTarget()">&#10005;</span>
+                </div>
+                <div class="input-top">
+                    <textarea class="msg-input" id="msgInput" rows="1"
+                              placeholder="Message #general" disabled></textarea>
+                </div>
+                <div class="input-actions">
+                    <div class="action-btns">
+                        <button class="iact" id="btnDm" onclick="openDmPrompt()" title="Send direct message" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        </button>
+                    </div>
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+                        <svg class="send-icon" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connect overlay -->
+    <div class="connect-overlay" id="connectOverlay">
+        <div class="connect-card">
+            <h3>Connect to chat</h3>
+            <p>Enter your name and server URL to join</p>
+            <div class="field">
+                <label>Your name</label>
+                <input id="inputName" value="Alice" placeholder="Enter your name" />
+            </div>
+            <div class="field">
+                <label>Server URL</label>
+                <input id="inputUrl" value="http://localhost:8080/ws" placeholder="http://host/ws" />
+            </div>
+            <div class="err-msg" id="errMsg"></div>
+            <button class="connect-btn" id="connectBtn" onclick="connect()">Connect</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let stompClient = null;
+    let connected = false;
+    let intentionalClose = false;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT = 30000;
+    // FIX 5: Track whether this is a first-connect attempt or a reconnect after a drop
+    let hasEverConnected = false;
+
+    let myUsername = '';
+    let activeChannel = 'public';
+    let dmRecipient = '';
+    let onlineMembers = new Set();
+    let dmUnread = 0;
+    // FIX 1: typingTimer used properly now
+    let typingTimer = null;
+    let typingTimeout;
+
+    const AVATAR_COLORS = ['av-blue','av-purple','av-teal','av-orange','av-pink','av-green','av-red','av-amber'];
+    function avatarColor(name) {
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
+        return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+    }
+    function initials(name) {
+        return name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    }
+    function formatTime(val) {
+        const d = val instanceof Date ? val : new Date(val);
+        if (isNaN(d)) return '';
+        return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }
+    function safeJSON(str) {
+        try { return JSON.parse(str); } catch { return null; }
+    }
+
+    /* ── State helpers ── */
+    function setConnected(state) {
+        connected = state === 'connected';
+        document.getElementById('statusDot').className = 'status-dot' +
+            (state === 'connected' ? ' online' : state === 'connecting' ? ' connecting' : '');
+        document.getElementById('statusText').textContent =
+            state === 'connected' ? 'online' : state === 'connecting' ? 'connecting…' : 'offline';
+        document.getElementById('msgInput').disabled = !connected;
+        document.getElementById('sendBtn').disabled = !connected;
+        document.getElementById('btnDm').disabled = !connected;
+        if (connected) {
+            document.getElementById('memberCount').style.display = 'flex';
+            document.getElementById('myName').textContent = myUsername;
+            document.getElementById('myAvatar').textContent = initials(myUsername);
+            document.getElementById('myAvatar').className = 'user-avatar ' + avatarColor(myUsername);
+        } else {
+            document.getElementById('memberCount').style.display = 'none';
+            document.getElementById('myName').textContent = state === 'connecting' ? 'Connecting…' : 'Not connected';
+        }
+    }
+
+    function switchChannel(ch) {
+        activeChannel = ch;
+        document.getElementById('chPublic').classList.toggle('active', ch === 'public');
+        document.getElementById('chPrivate').classList.toggle('active', ch === 'private');
+        const isPublic = ch === 'public';
+        document.getElementById('chanIcon').textContent = isPublic ? '#' : String.fromCharCode(9679);
+        document.getElementById('chanName').textContent = isPublic ? 'general' : 'direct messages';
+        document.getElementById('msgInput').placeholder = isPublic
+            ? 'Message #general'
+            : (dmRecipient ? 'Message @' + dmRecipient : 'Select a recipient first');
+        if (ch === 'private' && dmUnread > 0) {
+            dmUnread = 0;
+            document.getElementById('dmBadge').style.display = 'none';
+        }
+        // FIX 4: Reset lastMsgDate so the "Today" divider re-renders correctly on channel switch
+        lastMsgDate = '';
+    }
+
+    /* ── Connect ── */
+    function connect() {
+        const name = document.getElementById('inputName').value.trim();
+        const url  = document.getElementById('inputUrl').value.trim();
+        const err  = document.getElementById('errMsg');
+        if (!name) { err.textContent = 'Please enter your name.'; return; }
+        if (!url)  { err.textContent = 'Please enter the server URL.'; return; }
+        err.textContent = '';
+        myUsername = name;
+        intentionalClose = false;
+        document.getElementById('connectBtn').disabled = true;
+        document.getElementById('connectBtn').textContent = 'Connecting…';
+        setConnected('connecting');
+
+        // FIX 6: Tear down any existing STOMP client before creating a new one
+        if (stompClient) {
+            try { stompClient.disconnect(); } catch {}
+            stompClient = null;
+        }
+
+        const socket = new SockJS(url);
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null;
+
+        stompClient.connect({},
+            function() {
+                reconnectAttempts = 0;
+                hasEverConnected = true;
+
+                stompClient.subscribe('/topic/public', msg => {
+                    const n = safeJSON(msg.body); if (!n) return;
+                    handleMessage(n, 'public');
+                });
+                stompClient.subscribe('/user/queue/messages', msg => {
+                    const n = safeJSON(msg.body); if (!n) return;
+                    handleMessage(n, 'private');
+                });
+                setConnected('connected');
+                document.getElementById('connectOverlay').style.display = 'none';
+                stompClient.send('/app/chat.join', {}, JSON.stringify({senderName: myUsername, type: 'JOIN'}));
+                document.getElementById('msgInput').focus();
+            },
+            function(err) {
+                setConnected('disconnected');
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('connectBtn').textContent = 'Connect';
+                document.getElementById('errMsg').textContent = 'Failed: ' + (err?.message || 'connection refused');
+                // FIX 5: Only auto-reconnect after a drop, not on initial connection failure
+                if (!intentionalClose && hasEverConnected) scheduleReconnect();
+            }
+        );
+
+        socket.onclose = () => {
+            if (connected && !intentionalClose) {
+                setConnected('disconnected');
+                addSystemMsg('Connection lost. Reconnecting…');
+                scheduleReconnect();
+            }
+        };
+    }
+
+    function showConnect() {
+        intentionalClose = true;
+        cancelReconnect();
+        hasEverConnected = false;
+        if (stompClient && connected) {
+            try { stompClient.send('/app/chat.leave', {}, JSON.stringify({senderName: myUsername, type: 'LEAVE'})); } catch {}
+            setTimeout(() => { try { stompClient.disconnect(); } catch {} stompClient = null; }, 150);
+        } else {
+            // FIX 6: Always nullify stompClient on disconnect so connect() starts clean
+            stompClient = null;
+        }
+        setConnected('disconnected');
+        onlineMembers.clear();
+        document.getElementById('memberNum').textContent = '0';
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('connectBtn').textContent = 'Connect';
+        document.getElementById('errMsg').textContent = '';
+        document.getElementById('connectOverlay').style.display = 'flex';
+    }
+
+    /* ── Reconnect ── */
+    function scheduleReconnect() {
+        if (reconnectTimer || intentionalClose) return;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT);
+        reconnectAttempts++;
+        reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
+    }
+    function cancelReconnect() {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        reconnectAttempts = 0;
+    }
+
+    /* ── Message handling ── */
+    function handleMessage(n, channel) {
+        const type = (n.type || 'CHAT').toUpperCase();
+        const sender = n.senderName || '?';
+        const content = n.content || '';
+        const ts = formatTime(n.timestamp ? new Date(n.timestamp) : new Date());
+
+        if (type === 'JOIN') {
+            onlineMembers.add(sender);
+            document.getElementById('memberNum').textContent = onlineMembers.size;
+            addJoinLeave(sender, 'join');
+            return;
+        }
+        if (type === 'LEAVE') {
+            onlineMembers.delete(sender);
+            document.getElementById('memberNum').textContent = onlineMembers.size;
+            addJoinLeave(sender, 'leave');
+            return;
+        }
+        if (type === 'TYPING') {
+            showTyping(sender); return;
+        }
+
+        const isOwn = sender === myUsername;
+        const isPrivate = channel === 'private';
+
+        if (isPrivate && activeChannel !== 'private' && !isOwn) {
+            dmUnread++;
+            const badge = document.getElementById('dmBadge');
+            badge.style.display = 'inline-block';
+            badge.textContent = dmUnread;
+        }
+
+        addBubble({sender, content, ts, isOwn, isPrivate});
+    }
+
+    /* ── DOM builders ── */
+    function removeEmpty() {
+        const e = document.getElementById('emptyState');
+        if (e) e.remove();
+    }
+
+    function addDayDivider(label) {
+        const d = document.createElement('div');
+        d.className = 'day-divider';
+        d.innerHTML = '<span>' + label + '</span>';
+        document.getElementById('messages').appendChild(d);
+    }
+
+    let lastMsgDate = '';
+    function addBubble({sender, content, ts, isOwn, isPrivate}) {
+        removeEmpty();
+        const msgs = document.getElementById('messages');
+        const today = new Date().toDateString();
+        if (lastMsgDate !== today) {
+            addDayDivider('Today');
+            lastMsgDate = today;
+        }
+
+        const group = document.createElement('div');
+        group.className = 'msg-group' + (isOwn ? ' own' : '');
+
+        const av = document.createElement('div');
+        av.className = 'avatar-col';
+        const avc = document.createElement('div');
+        avc.className = 'avatar ' + avatarColor(sender);
+        avc.textContent = initials(sender);
+        av.appendChild(avc);
+
+        const col = document.createElement('div');
+        col.className = 'bubble-col';
+
+        const meta = document.createElement('div');
+        meta.className = 'msg-meta';
+        const sn = document.createElement('span');
+        sn.className = 'sender-name';
+        sn.textContent = isOwn ? 'You' : sender;
+        const st = document.createElement('span');
+        st.className = 'msg-time';
+        st.textContent = ts;
+        meta.appendChild(sn);
+        meta.appendChild(st);
+
+        if (isPrivate) {
+            const lbl = document.createElement('div');
+            lbl.className = 'dm-label';
+            lbl.textContent = 'direct message';
+            col.appendChild(lbl);
+        }
+
+        col.appendChild(meta);
+
+        const bub = document.createElement('div');
+        if (isPrivate) {
+            bub.className = 'bubble ' + (isOwn ? 'own-private' : 'private');
+        } else {
+            bub.className = 'bubble ' + (isOwn ? 'own-bubble' : 'public');
+        }
+        bub.textContent = content;
+        col.appendChild(bub);
+
+        group.appendChild(av);
+        group.appendChild(col);
+        msgs.appendChild(group);
+        msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function addSystemMsg(text) {
+        removeEmpty();
+        const d = document.createElement('div');
+        d.className = 'system-msg';
+        d.textContent = text;
+        document.getElementById('messages').appendChild(d);
+        document.getElementById('messages').scrollTop = 99999;
+    }
+
+    function addJoinLeave(name, type) {
+        removeEmpty();
+        const d = document.createElement('div');
+        d.className = 'join-leave' + (type === 'leave' ? ' leave' : '');
+        d.innerHTML = '<span class="name">' + escText(name) + '</span> ' +
+            (type === 'join' ? 'joined the channel' : 'left the channel');
+        document.getElementById('messages').appendChild(d);
+        document.getElementById('messages').scrollTop = 99999;
+    }
+
+    function showTyping(name) {
+        if (name === myUsername) return;
+        const bar = document.getElementById('typingBar');
+        document.getElementById('typingText').textContent = name + ' is typing…';
+        bar.style.visibility = 'visible';
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => { bar.style.visibility = 'hidden'; }, 3000);
+    }
+
+    function escText(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    /* ── Send ── */
+    function sendMessage() {
+        if (!stompClient || !connected) return;
+        const content = document.getElementById('msgInput').value.trim();
+        if (!content) return;
+
+        if (dmRecipient && activeChannel === 'private') {
+            stompClient.send('/app/chat.private', {}, JSON.stringify({
+                senderName: myUsername, recipientName: dmRecipient, content, type: 'CHAT'
+            }));
+            addBubble({sender: myUsername, content, ts: formatTime(new Date()), isOwn: true, isPrivate: true});
+        } else {
+            stompClient.send('/app/chat.send', {}, JSON.stringify({
+                senderName: myUsername, content, type: 'CHAT'
+            }));
+        }
+        document.getElementById('msgInput').value = '';
+        document.getElementById('msgInput').style.height = 'auto';
+        document.getElementById('msgInput').focus();
+    }
+
+    /* ── DM target ── */
+    function openDmPrompt() {
+        const r = prompt('Send DM to (enter username):');
+        if (!r || !r.trim()) return;
+        dmRecipient = r.trim();
+        document.getElementById('dmToName').textContent = dmRecipient;
+        document.getElementById('dmTarget').classList.add('visible');
+        switchChannel('private');
+        document.getElementById('msgInput').placeholder = 'Message @' + dmRecipient;
+        document.getElementById('msgInput').focus();
+    }
+
+    function clearDmTarget() {
+        dmRecipient = '';
+        document.getElementById('dmTarget').classList.remove('visible');
+        document.getElementById('msgInput').placeholder = 'Select a recipient first';
+    }
+
+    /* ── Auto-grow textarea + typing events ── */
+    document.getElementById('msgInput').addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+
+        // FIX 1: Send typing event to server (debounced 300ms)
+        if (connected && stompClient) {
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => {
+                try {
+                    stompClient.send('/app/chat.typing', {}, JSON.stringify({
+                        senderName: myUsername, type: 'TYPING'
+                    }));
+                } catch {}
+            }, 300);
+        }
+    });
+
+    document.getElementById('msgInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    /* ── Boot ── */
+    setConnected('disconnected');
+</script>
+</body>
+</html>
