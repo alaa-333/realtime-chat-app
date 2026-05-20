@@ -2,6 +2,12 @@
 
 A full-stack real-time messaging platform built with Spring Boot and WebSocket (STOMP protocol) that enables instant bidirectional communication between multiple users.
 
+## Application Screenshot
+
+![Chat Application Interface](src/main/resources/static/img.png)
+
+*Real-time chat interface with public and private messaging capabilities*
+
 ## Features
 
 - **Real-Time Messaging**: Instant message delivery using WebSocket and STOMP protocol
