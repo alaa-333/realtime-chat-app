@@ -33,7 +33,7 @@ public class ChatController {
                 .senderName(message.getSenderName())
                 .content(message.getContent())
                 .type(message.getMessageType())
-                .dateTime(LocalDateTime.now())
+                .timestamp(LocalDateTime.now())
                 .build();
     }
 
